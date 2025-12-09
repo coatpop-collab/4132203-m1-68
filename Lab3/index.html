@@ -1,0 +1,70 @@
+<html>
+    <body>
+        <div>Hello JavaScript</div>
+    </body>
+
+    <script>
+        // alert("Hello js");
+        var num = 10;
+        var name;
+        let age = 15;
+        const x = "BRU";
+        console.log(x);
+
+        // function
+        function add(a,b){
+            let c = a+ b;
+            return c;
+        }
+        
+        let total = add(3,5);
+        console.log(total);
+
+        let add2 = function (aa,bb){
+            let c= aa + bb;
+            return c;
+        }
+
+        let add3 = (a,b) => {
+            return a+b;
+        }
+
+        // array
+        let arr = [-1,2.3,5,"name"];
+        console.log(arr[3]);
+
+        const car = Array("Honda","Toyota");
+
+        let arp = [[2,5,0],"age"];
+
+        // object
+        let person = { 
+            name:"Coat",
+            lastname: "Phisuk",
+            age: 20,
+            Child: ["no","coat"],
+            fullname: function(){
+                return this.name + " " + this.lastname;
+            }
+        }
+
+        console.log(person.fullname(),person.Child[1])
+
+        // spread
+        let arr3 = [...car,...arr];
+        let arr4 = [car,arr];
+         
+        console.log(arr3);
+        console.log(arr4);
+        
+        // condition
+        if(3<5){
+            console.log("true");
+        }else console.log("false");
+        let check = 3 < 5 ? "true" : "false";
+
+    </script>
+
+    <script src="app.js"></script>
+    
+</html>
