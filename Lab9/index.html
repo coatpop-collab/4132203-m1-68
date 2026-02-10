@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FCM Notification App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .notification-card {
+            transition: all 0.3s ease;
+        }
+        .notification-card:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+
+    <div class="max-w-md mx-auto p-6">
+        <!-- ส่วนหัว -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-blue-600 mb-2">FCM Web Push</h1>
+            <p class="text-gray-600">แอปแจ้งเตือนผ่านเว็บด้วย Firebase</p>
+        </header>
+
+        <!-- สถานะการเชื่อมต่อ -->
+        <div id="setup-section" class="bg-white rounded-xl p-6 shadow-sm mb-6">
+            <h2 class="text-lg font-semibold mb-4 border-b pb-2">สถานะระบบ</h2>
+            
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-700">Service Worker:</span>
+                    <span id="sw-status" class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs">กำลังตรวจสอบ...</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-700">สิทธิ์การแจ้งเตือน:</span>
+                    <span id="permission-status" class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">ยังไม่ได้ขอ</span>
+                </div>
+                <button id="btn-request-permission" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2">
+                    <i class="fas fa-bell"></i> ขอสิทธิ์รับแจ้งเตือน
+                </button>
+            </div>
+        </div>
+
+        <!-- FCM Token -->
+        <div id="token-section" class="bg-white rounded-xl p-6 shadow-sm mb-6 hidden">
+            <h2 class="text-lg font-semibold mb-2">Device Token</h2>
+            <p class="text-xs text-gray-500 mb-3">คัดลอก Token นี้ไปใช้ในการส่งข้อความทดสอบ</p>
+            <div class="relative">
+                <textarea id="fcm-token" readonly class="w-full h-24 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs break-all focus:outline-none"></textarea>
+                <button id="btn-copy-token" class="absolute bottom-2 right-2 bg-gray-200 hover:bg-gray-300 p-2 rounded text-xs transition">
+                    <i class="fas fa-copy"></i> คัดลอก
+                </button>
+            </div>
+        </div>
+
+        <!-- รายการข้อความที่ได้รับ -->
+        <div class="bg-white rounded-xl p-6 shadow-sm">
+            <div class="flex items-center justify-between mb-4 border-b pb-2">
+                <h2 class="text-lg font-semibold">ข้อความล่าสุด</h2>
+                <span id="notif-count" class="bg-blue-100 text-blue-600 text-xs font-bold px-2 py-1 rounded-full">0</span>
+            </div>
+            <div id="messages-list" class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                <div class="text-center py-8 text-gray-400 italic text-sm">ยังไม่มีข้อความใหม่เข้ามา</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging.js";
+
+        /** * 1. ตั้งค่า Firebase Configuration ของคุณที่นี่
+         * คุณสามารถหาข้อมูลนี้ได้จาก Firebase Console -> Project Settings
+         */
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const messaging = getMessaging(app);
+
+        // UI Elements
+        const btnRequest = document.getElementById('btn-request-permission');
+        const swStatus = document.getElementById('sw-status');
+        const permStatus = document.getElementById('permission-status');
+        const tokenSection = document.getElementById('token-section');
+        const tokenText = document.getElementById('fcm-token');
+        const messagesList = document.getElementById('messages-list');
+        const notifCount = document.getElementById('notif-count');
+        const btnCopy = document.getElementById('btn-copy-token');
+
+        let messageCount = 0;
+
+        // ฟังก์ชันอัปเดตสถานะ UI
+        function updateStatus() {
+            permStatus.textContent = Notification.permission;
+            if (Notification.permission === 'granted') {
+                permStatus.className = 'px-2 py-1 bg-green-100 text-green-700 rounded text-xs';
+                btnRequest.classList.add('hidden');
+                initFCM();
+            } else if (Notification.permission === 'denied') {
+                permStatus.className = 'px-2 py-1 bg-red-100 text-red-700 rounded text-xs';
+                btnRequest.textContent = 'ถูกปฏิเสธ (โปรดแก้ในเบราว์เซอร์)';
+                btnRequest.disabled = true;
+            }
+        }
+
+        // ขอสิทธิ์การแจ้งเตือน
+        btnRequest.addEventListener('click', async () => {
+            const permission = await Notification.requestPermission();
+            updateStatus();
+        });
+
+        // ลงทะเบียน Service Worker และรับ Token
+        async function initFCM() {
+            try {
+                // สำหรับ Web Push คุณต้องมี VAPID key จาก Cloud Messaging tab ใน Firebase settings
+                const vapidKey = 'BBQCrYKZcLDr97D_c2IOkdX-LLXkXxSMK4Gt1PuOxVjeVHJFXFEia_xF-m-AWgAemgVrcpCHkB_RjBjBYNPKuGY';
+                
+                const token = await getToken(messaging, { vapidKey: vapidKey });
+                
+                if (token) {
+                    tokenSection.classList.remove('hidden');
+                    tokenText.value = token;
+                    console.log('FCM Token:', token);
+                } else {
+                    console.warn('ไม่สามารถรับ Token ได้');
+                }
+            } catch (err) {
+                console.error('เกิดข้อผิดพลาดในการรับ Token:', err);
+            }
+        }
+
+        // จัดการเมื่อมีข้อความเข้าขณะเปิดแอปอยู่ (Foreground)
+        onMessage(messaging, (payload) => {
+            console.log('ได้รับข้อความ:', payload);
+            addMessageUI(payload.notification.title, payload.notification.body);
+            
+            // แสดง Browser Native Notification แม้จะเปิดแอปอยู่ (ทางเลือก)
+            new Notification(payload.notification.title, {
+                body: payload.notification.body,
+                icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png'
+            });
+        });
+
+        // เพิ่มข้อความในหน้าจอ
+        function addMessageUI(title, body) {
+            if (messageCount === 0) messagesList.innerHTML = '';
+            
+            messageCount++;
+            notifCount.textContent = messageCount;
+
+            const div = document.createElement('div');
+            div.className = 'notification-card bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg shadow-sm animate-fade-in';
+            div.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <h3 class="font-bold text-blue-800 text-sm">${title || 'ไม่มีหัวข้อ'}</h3>
+                    <span class="text-[10px] text-gray-400">${new Date().toLocaleTimeString()}</span>
+                </div>
+                <p class="text-gray-600 text-xs mt-1">${body || 'ไม่มีเนื้อหา'}</p>
+            `;
+            messagesList.prepend(div);
+        }
+
+        // ปุ่มคัดลอก Token
+        btnCopy.addEventListener('click', () => {
+            tokenText.select();
+            document.execCommand('copy');
+            const originalText = btnCopy.innerHTML;
+            btnCopy.innerHTML = '<i class="fas fa-check text-green-500"></i>';
+            setTimeout(() => btnCopy.innerHTML = originalText, 2000);
+        });
+
+        // ตรวจสอบ Service Worker
+        if ('serviceWorker' in navigator) {
+            swStatus.textContent = 'รองรับ';
+            swStatus.className = 'px-2 py-1 bg-green-100 text-green-700 rounded text-xs';
+        } else {
+            swStatus.textContent = 'ไม่รองรับ';
+            swStatus.className = 'px-2 py-1 bg-red-100 text-red-700 rounded text-xs';
+        }
+
+        updateStatus();
+    </script>
+</body>
+</html>
